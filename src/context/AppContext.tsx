@@ -1,4 +1,31 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
+import {
+  User,
+  onAuthStateChanged,
+  signInWithPopup,
+  signInAnonymously,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  signOut,
+} from 'firebase/auth';
+import {
+  auth,
+  googleProvider,
+  testFirestoreConnection,
+  type FirebaseDiagnostic,
+  formatFirebaseAuthError,
+  formatFirestoreError,
+} from '../firebase';
+import {
+  saveStudentProfileToFirestore,
+  saveSubjectsToFirestore,
+  saveAttendanceRecordsToFirestore,
+  saveTodosToFirestore,
+  saveRisksToFirestore,
+  saveScheduleToFirestore,
+  fetchAllStudentDataFromFirestore,
+  syncAllStudentDataToFirestore,
+} from '../services/firebaseService';
 import {
   NavigationTab,
   StudentProfile,
@@ -16,8 +43,10 @@ import {
   calculateAttendancePercentage,
 } from '../utils/academicCalculations';
 
+export type CloudSyncStatus = 'idle' | 'syncing' | 'synced' | 'error' | 'offline';
+
 interface AppContextType {
-  // Navigation & Authentication
+  // Navigation & Local State
   activeTab: NavigationTab;
   setActiveTab: (tab: NavigationTab) => void;
   student: StudentProfile | null;
@@ -26,6 +55,22 @@ interface AppContextType {
   logout: () => void;
   resetAllData: () => void;
   loadSampleTemplate: () => void;
+
+  // Firebase Authentication & Cloud State
+  firebaseUser: User | null;
+  isAuthLoading: boolean;
+  cloudSyncStatus: CloudSyncStatus;
+  lastCloudSync: string | null;
+  cloudError: string | null;
+  clearCloudError: () => void;
+  signInWithGoogle: () => Promise<void>;
+  signInAsGuest: () => Promise<void>;
+  signInWithEmail: (email: string, pass: string) => Promise<{ success: boolean; error?: string }>;
+  signUpWithEmail: (email: string, pass: string) => Promise<{ success: boolean; error?: string }>;
+  firebaseSignOut: () => Promise<void>;
+  syncToFirestoreNow: (targetId?: string) => Promise<boolean>;
+  loadFromFirestoreNow: (targetId?: string) => Promise<boolean>;
+  testCloudConnection: () => Promise<FirebaseDiagnostic>;
 
   // Subjects
   subjects: Subject[];
@@ -83,9 +128,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const initial = loadSavedState();
 
-  const [student, setStudent] = useState<StudentProfile | null>(
-    initial?.student || null
-  );
+  const [student, setStudent] = useState<StudentProfile | null>(initial?.student || null);
   const [activeTab, setActiveTab] = useState<NavigationTab>(
     initial?.student?.isProfileComplete ? 'dashboard' : 'home'
   );
@@ -111,9 +154,70 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [isMentorTyping, setIsMentorTyping] = useState<boolean>(false);
   const [isAssistantDrawerOpen, setIsAssistantDrawerOpen] = useState<boolean>(false);
 
-  const isProfileComplete = Boolean(student?.isProfileComplete);
+  // Firebase auth & cloud sync states
+  const [firebaseUser, setFirebaseUser] = useState<User | null>(null);
+  const [isAuthLoading, setIsAuthLoading] = useState<boolean>(true);
+  const [cloudSyncStatus, setCloudSyncStatus] = useState<CloudSyncStatus>('idle');
+  const [lastCloudSync, setLastCloudSync] = useState<string | null>(null);
+  const [cloudError, setCloudError] = useState<string | null>(null);
 
-  // Automatically recalculate risks when subjects, todos, or target percentage change
+  const isProfileComplete = Boolean(student?.isProfileComplete);
+  const syncTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Listen to Firebase Auth changes
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      setFirebaseUser(user);
+      setIsAuthLoading(false);
+
+      if (user) {
+        // Automatically fetch student data from Cloud Firestore
+        try {
+          setCloudSyncStatus('syncing');
+          const cloudData = await fetchAllStudentDataFromFirestore(user.uid);
+
+          if (cloudData.profile) {
+            // User has existing records in Firestore - load them
+            setStudent(cloudData.profile);
+            if (cloudData.subjects.length > 0) setSubjects(cloudData.subjects);
+            if (cloudData.attendanceRecords.length > 0) setAttendanceRecords(cloudData.attendanceRecords);
+            if (cloudData.todos.length > 0) setTodos(cloudData.todos);
+            if (cloudData.risks.length > 0) setRisks(cloudData.risks);
+            if (cloudData.schedule.length > 0) setSchedule(cloudData.schedule);
+
+            setLastCloudSync(new Date().toLocaleTimeString());
+            setCloudSyncStatus('synced');
+            setCloudError(null);
+          } else if (student?.isProfileComplete) {
+            // User logged in with local profile, back it up to Firestore
+            await syncAllStudentDataToFirestore(user.uid, {
+              profile: student,
+              subjects,
+              attendanceRecords,
+              todos,
+              risks,
+              schedule,
+            });
+            setLastCloudSync(new Date().toLocaleTimeString());
+            setCloudSyncStatus('synced');
+            setCloudError(null);
+          } else {
+            setCloudSyncStatus('synced');
+          }
+        } catch (err: unknown) {
+          console.error('Failed to load initial data from Firestore:', err);
+          setCloudSyncStatus('error');
+          setCloudError(err instanceof Error ? err.message : 'Firestore sync error');
+        }
+      } else {
+        setCloudSyncStatus('idle');
+      }
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  // Recalculate risks when subjects, todos, or target percentage change
   useEffect(() => {
     if (student?.isProfileComplete) {
       const detected = analyzeAcademicRisks({
@@ -151,14 +255,228 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   }, [student, subjects, attendanceRecords, todos, risks, schedule, mentorMessages]);
 
+  // Debounced auto-save to Firestore when authenticated or profile exists
+  useEffect(() => {
+    const syncTarget = firebaseUser?.uid || (student?.isProfileComplete ? student.studentId : null);
+    if (!syncTarget || !student?.isProfileComplete) return;
+
+    if (syncTimeoutRef.current) {
+      clearTimeout(syncTimeoutRef.current);
+    }
+
+    syncTimeoutRef.current = setTimeout(async () => {
+      try {
+        setCloudSyncStatus('syncing');
+        await syncAllStudentDataToFirestore(syncTarget, {
+          profile: student,
+          subjects,
+          attendanceRecords,
+          todos,
+          risks,
+          schedule,
+        });
+        setCloudSyncStatus('synced');
+        setLastCloudSync(new Date().toLocaleTimeString());
+        setCloudError(null);
+      } catch (err: unknown) {
+        const msg = formatFirestoreError(err);
+        console.warn('Auto-save to Firestore notice:', msg);
+        setCloudSyncStatus('error');
+        setCloudError(msg);
+      }
+    }, 2500);
+
+    return () => {
+      if (syncTimeoutRef.current) clearTimeout(syncTimeoutRef.current);
+    };
+  }, [student, subjects, attendanceRecords, todos, risks, schedule, firebaseUser]);
+
+  const clearCloudError = () => {
+    setCloudError(null);
+  };
+
+  // Manual cloud actions
+  const syncToFirestoreNow = async (targetId?: string): Promise<boolean> => {
+    const syncId =
+      targetId?.trim() ||
+      firebaseUser?.uid ||
+      student?.studentId?.trim() ||
+      (student?.email ? encodeURIComponent(student.email) : null);
+
+    if (!syncId) {
+      setCloudError('Please create a student profile or sign in to push records to Cloud Firestore.');
+      return false;
+    }
+    if (!student?.isProfileComplete) {
+      setCloudError('Please complete your student profile details first before pushing to Cloud Firestore.');
+      return false;
+    }
+
+    try {
+      setCloudSyncStatus('syncing');
+      setCloudError(null);
+      await syncAllStudentDataToFirestore(syncId, {
+        profile: student,
+        subjects,
+        attendanceRecords,
+        todos,
+        risks,
+        schedule,
+      });
+      setCloudSyncStatus('synced');
+      setLastCloudSync(new Date().toLocaleTimeString());
+      return true;
+    } catch (err: unknown) {
+      const msg = formatFirestoreError(err);
+      console.error('Manual Firestore sync failed:', err);
+      setCloudSyncStatus('error');
+      setCloudError(msg);
+      return false;
+    }
+  };
+
+  const loadFromFirestoreNow = async (targetId?: string): Promise<boolean> => {
+    const syncId =
+      targetId?.trim() ||
+      firebaseUser?.uid ||
+      student?.studentId?.trim() ||
+      (student?.email ? encodeURIComponent(student.email) : null);
+
+    if (!syncId) {
+      setCloudError('Please provide a Student ID / Roll Number or sign in to load records from Firestore.');
+      return false;
+    }
+
+    try {
+      setCloudSyncStatus('syncing');
+      setCloudError(null);
+      const cloudData = await fetchAllStudentDataFromFirestore(syncId);
+      if (cloudData.profile) {
+        setStudent(cloudData.profile);
+        if (cloudData.subjects) setSubjects(cloudData.subjects);
+        if (cloudData.attendanceRecords) setAttendanceRecords(cloudData.attendanceRecords);
+        if (cloudData.todos) setTodos(cloudData.todos);
+        if (cloudData.risks) setRisks(cloudData.risks);
+        if (cloudData.schedule) setSchedule(cloudData.schedule);
+        setLastCloudSync(new Date().toLocaleTimeString());
+        setCloudSyncStatus('synced');
+        return true;
+      }
+      setCloudSyncStatus('synced');
+      setCloudError(`No student records found in Firestore for identifier "${syncId}".`);
+      return false;
+    } catch (err: unknown) {
+      const msg = formatFirestoreError(err);
+      console.error('Failed to load from Firestore:', err);
+      setCloudSyncStatus('error');
+      setCloudError(msg);
+      return false;
+    }
+  };
+
+  const signInWithGoogle = async () => {
+    try {
+      setCloudSyncStatus('syncing');
+      setCloudError(null);
+      await signInWithPopup(auth, googleProvider);
+    } catch (err: unknown) {
+      const msg = formatFirebaseAuthError(err);
+      console.error('Google Sign-In failed:', err);
+      setCloudError(msg);
+      setCloudSyncStatus('error');
+    }
+  };
+
+  const signInAsGuest = async () => {
+    try {
+      setCloudSyncStatus('syncing');
+      setCloudError(null);
+      await signInAnonymously(auth);
+    } catch (err: unknown) {
+      const msg = formatFirebaseAuthError(err);
+      console.error('Guest Auth failed:', err);
+      setCloudError(msg);
+      setCloudSyncStatus('error');
+    }
+  };
+
+  const signInWithEmail = async (
+    email: string,
+    pass: string
+  ): Promise<{ success: boolean; error?: string }> => {
+    try {
+      setCloudSyncStatus('syncing');
+      setCloudError(null);
+      await signInWithEmailAndPassword(auth, email.trim(), pass);
+      setCloudSyncStatus('synced');
+      return { success: true };
+    } catch (err: unknown) {
+      const msg = formatFirebaseAuthError(err);
+      console.error('Email Sign-In failed:', err);
+      setCloudError(msg);
+      setCloudSyncStatus('error');
+      return { success: false, error: msg };
+    }
+  };
+
+  const signUpWithEmail = async (
+    email: string,
+    pass: string
+  ): Promise<{ success: boolean; error?: string }> => {
+    try {
+      setCloudSyncStatus('syncing');
+      setCloudError(null);
+      await createUserWithEmailAndPassword(auth, email.trim(), pass);
+      setCloudSyncStatus('synced');
+      return { success: true };
+    } catch (err: unknown) {
+      const msg = formatFirebaseAuthError(err);
+      console.error('Email Sign-Up failed:', err);
+      setCloudError(msg);
+      setCloudSyncStatus('error');
+      return { success: false, error: msg };
+    }
+  };
+
+  const firebaseSignOut = async () => {
+    try {
+      await signOut(auth);
+      setFirebaseUser(null);
+      setCloudSyncStatus('idle');
+      setLastCloudSync(null);
+      setCloudError(null);
+    } catch (err: unknown) {
+      console.error('Sign out failed:', err);
+    }
+  };
+
+  const testCloudConnection = async () => {
+    return await testFirestoreConnection();
+  };
+
   // Profile actions
-  const saveProfile = (newProfile: StudentProfile) => {
+  const saveProfile = async (newProfile: StudentProfile) => {
     const completeProfile: StudentProfile = {
       ...newProfile,
       isProfileComplete: true,
     };
     setStudent(completeProfile);
     setActiveTab('dashboard');
+
+    const syncTarget = firebaseUser?.uid || completeProfile.studentId;
+    if (syncTarget) {
+      try {
+        setCloudSyncStatus('syncing');
+        await saveStudentProfileToFirestore(syncTarget, completeProfile);
+        setCloudSyncStatus('synced');
+        setLastCloudSync(new Date().toLocaleTimeString());
+        setCloudError(null);
+      } catch (e: unknown) {
+        const msg = formatFirestoreError(e);
+        console.warn('Failed to save profile to Firestore:', msg);
+        setCloudError(msg);
+      }
+    }
   };
 
   const logout = () => {
@@ -188,7 +506,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const loadSampleTemplate = () => {
     const sampleProfile: StudentProfile = {
       fullName: 'Aarav Sharma',
-      email: 'aarav.sharma@campus.edu',
+      email: firebaseUser?.email || 'aarav.sharma@campus.edu',
       collegeName: 'National Institute of Technology',
       branch: 'Computer Science & Engineering',
       academicYear: '3rd Year',
@@ -319,6 +637,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setSchedule(generatedSched);
 
     setActiveTab('dashboard');
+
+    // Also sync to Firestore if signed in
+    if (firebaseUser) {
+      syncAllStudentDataToFirestore(firebaseUser.uid, {
+        profile: sampleProfile,
+        subjects: sampleSubjects,
+        attendanceRecords: [],
+        todos: sampleTodos,
+        risks: generatedRisks,
+        schedule: generatedSched,
+      }).catch(console.error);
+    }
   };
 
   // Subject actions
@@ -327,18 +657,30 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       ...newSub,
       id: `subj-${Date.now()}`,
     };
-    setSubjects((prev) => [...prev, subject]);
+    const updated = [...subjects, subject];
+    setSubjects(updated);
+    if (firebaseUser) {
+      saveSubjectsToFirestore(firebaseUser.uid, updated).catch(console.error);
+    }
   };
 
   const updateSubject = (id: string, updated: Partial<Subject>) => {
-    setSubjects((prev) =>
-      prev.map((s) => (s.id === id ? { ...s, ...updated } : s))
-    );
+    const updatedList = subjects.map((s) => (s.id === id ? { ...s, ...updated } : s));
+    setSubjects(updatedList);
+    if (firebaseUser) {
+      saveSubjectsToFirestore(firebaseUser.uid, updatedList).catch(console.error);
+    }
   };
 
   const deleteSubject = (id: string) => {
-    setSubjects((prev) => prev.filter((s) => s.id !== id));
-    setAttendanceRecords((prev) => prev.filter((r) => r.subjectId !== id));
+    const updatedList = subjects.filter((s) => s.id !== id);
+    const updatedAttendance = attendanceRecords.filter((r) => r.subjectId !== id);
+    setSubjects(updatedList);
+    setAttendanceRecords(updatedAttendance);
+    if (firebaseUser) {
+      saveSubjectsToFirestore(firebaseUser.uid, updatedList).catch(console.error);
+      saveAttendanceRecordsToFirestore(firebaseUser.uid, updatedAttendance).catch(console.error);
+    }
   };
 
   // Attendance actions
@@ -351,7 +693,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const targetSub = subjects.find((s) => s.id === subjectId);
     if (!targetSub) return;
 
-    // Check if record already exists for this subject on this date
     const existingIndex = attendanceRecords.findIndex(
       (r) => r.date === date && r.subjectId === subjectId
     );
@@ -366,7 +707,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         notes,
       };
 
-      // Adjust subject aggregate numbers if old status was different
       let newAttended = targetSub.attendedClasses;
       let newTotal = targetSub.totalClasses;
 
@@ -387,7 +727,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         updateSubject(subjectId, { attendedClasses: newAttended, totalClasses: newTotal });
       }
     } else {
-      // Create new record
       const newRec: DailyAttendanceRecord = {
         id: `att-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
         date,
@@ -399,7 +738,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       };
       updatedRecords.push(newRec);
 
-      // Increment subject aggregate counts
       let newAttended = targetSub.attendedClasses;
       let newTotal = targetSub.totalClasses;
 
@@ -408,12 +746,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         newTotal += 1;
       } else if (status === 'absent') {
         newTotal += 1;
-      } // If excused, do not increment total conducted classes
+      }
 
       updateSubject(subjectId, { attendedClasses: newAttended, totalClasses: newTotal });
     }
 
     setAttendanceRecords(updatedRecords);
+    if (firebaseUser) {
+      saveAttendanceRecordsToFirestore(firebaseUser.uid, updatedRecords).catch(console.error);
+    }
   };
 
   const deleteAttendanceRecord = (recordId: string) => {
@@ -434,7 +775,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       updateSubject(targetSub.id, { attendedClasses: newAttended, totalClasses: newTotal });
     }
 
-    setAttendanceRecords((prev) => prev.filter((r) => r.id !== recordId));
+    const updated = attendanceRecords.filter((r) => r.id !== recordId);
+    setAttendanceRecords(updated);
+    if (firebaseUser) {
+      saveAttendanceRecordsToFirestore(firebaseUser.uid, updated).catch(console.error);
+    }
   };
 
   // To-Do actions
@@ -444,28 +789,44 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       id: `todo-${Date.now()}`,
       createdAt: new Date().toISOString().split('T')[0],
     };
-    setTodos((prev) => [todo, ...prev]);
+    const updated = [todo, ...todos];
+    setTodos(updated);
+    if (firebaseUser) {
+      saveTodosToFirestore(firebaseUser.uid, updated).catch(console.error);
+    }
   };
 
   const updateTodo = (id: string, updated: Partial<TodoTask>) => {
-    setTodos((prev) => prev.map((t) => (t.id === id ? { ...t, ...updated } : t)));
+    const updatedList = todos.map((t) => (t.id === id ? { ...t, ...updated } : t));
+    setTodos(updatedList);
+    if (firebaseUser) {
+      saveTodosToFirestore(firebaseUser.uid, updatedList).catch(console.error);
+    }
   };
 
   const toggleTodoComplete = (id: string) => {
-    setTodos((prev) =>
-      prev.map((t) => (t.id === id ? { ...t, completed: !t.completed } : t))
-    );
+    const updatedList = todos.map((t) => (t.id === id ? { ...t, completed: !t.completed } : t));
+    setTodos(updatedList);
+    if (firebaseUser) {
+      saveTodosToFirestore(firebaseUser.uid, updatedList).catch(console.error);
+    }
   };
 
   const deleteTodo = (id: string) => {
-    setTodos((prev) => prev.filter((t) => t.id !== id));
+    const updatedList = todos.filter((t) => t.id !== id);
+    setTodos(updatedList);
+    if (firebaseUser) {
+      saveTodosToFirestore(firebaseUser.uid, updatedList).catch(console.error);
+    }
   };
 
   // Risks actions
   const updateRiskStatus = (id: string, status: 'Open' | 'In Progress' | 'Resolved') => {
-    setRisks((prev) =>
-      prev.map((r) => (r.id === id ? { ...r, status } : r))
-    );
+    const updatedList = risks.map((r) => (r.id === id ? { ...r, status } : r));
+    setRisks(updatedList);
+    if (firebaseUser) {
+      saveRisksToFirestore(firebaseUser.uid, updatedList).catch(console.error);
+    }
   };
 
   const refreshRisks = () => {
@@ -476,6 +837,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         profile: student,
       });
       setRisks(detected);
+      if (firebaseUser) {
+        saveRisksToFirestore(firebaseUser.uid, detected).catch(console.error);
+      }
     }
   };
 
@@ -488,16 +852,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       profile: student,
     });
     setSchedule(generated);
+    if (firebaseUser) {
+      saveScheduleToFirestore(firebaseUser.uid, generated).catch(console.error);
+    }
   };
 
   const toggleScheduleTaskComplete = (id: string) => {
-    setSchedule((prev) =>
-      prev.map((t) => (t.id === id ? { ...t, completed: !t.completed } : t))
-    );
+    const updatedList = schedule.map((t) => (t.id === id ? { ...t, completed: !t.completed } : t));
+    setSchedule(updatedList);
+    if (firebaseUser) {
+      saveScheduleToFirestore(firebaseUser.uid, updatedList).catch(console.error);
+    }
   };
 
   const deleteScheduleTask = (id: string) => {
-    setSchedule((prev) => prev.filter((t) => t.id !== id));
+    const updatedList = schedule.filter((t) => t.id !== id);
+    setSchedule(updatedList);
+    if (firebaseUser) {
+      saveScheduleToFirestore(firebaseUser.uid, updatedList).catch(console.error);
+    }
   };
 
   // AI Mentor actions
@@ -544,6 +917,39 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         })),
       };
 
+      // 1. First attempt: n8n workflow chat webhook endpoint
+      try {
+        const n8nRes = await fetch('/api/n8n/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            message: query,
+            chatInput: query,
+            studentContext,
+            sessionId: student?.studentId || 'student-chat',
+          }),
+        });
+
+        if (n8nRes.ok) {
+          const n8nData = await n8nRes.json();
+          if (n8nData.reply) {
+            const assistantMsg: ChatMessage = {
+              id: `n8n-${Date.now()}`,
+              sender: 'assistant',
+              text: n8nData.reply,
+              timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+              isLiveAI: true,
+              source: 'n8n',
+            };
+            setMentorMessages((prev) => [...prev, assistantMsg]);
+            return;
+          }
+        }
+      } catch (n8nErr) {
+        console.warn('n8n webhook invocation bypassed, falling back to Gemini/rules:', n8nErr);
+      }
+
+      // 2. Secondary attempt: Built-in Gemini model endpoint
       const res = await fetch('/api/gemini/assistant', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -558,6 +964,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           text: data.reply,
           timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
           isLiveAI: data.isLiveAI,
+          source: 'gemini',
         };
         setMentorMessages((prev) => [...prev, assistantMsg]);
       } else {
@@ -597,6 +1004,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           text: reply,
           timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
           isLiveAI: false,
+          source: 'rules',
         },
       ]);
     } finally {
@@ -626,6 +1034,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         logout,
         resetAllData,
         loadSampleTemplate,
+        firebaseUser,
+        isAuthLoading,
+        cloudSyncStatus,
+        lastCloudSync,
+        cloudError,
+        clearCloudError,
+        signInWithGoogle,
+        signInAsGuest,
+        signInWithEmail,
+        signUpWithEmail,
+        firebaseSignOut,
+        syncToFirestoreNow,
+        loadFromFirestoreNow,
+        testCloudConnection,
         subjects,
         addSubject,
         updateSubject,

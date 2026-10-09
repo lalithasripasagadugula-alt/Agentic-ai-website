@@ -13,6 +13,7 @@ import { RecoverySchedulePage } from './components/pages/RecoverySchedulePage';
 import { AIMentorPage } from './components/pages/AIMentorPage';
 import { ProgressAnalyticsPage } from './components/pages/ProgressAnalyticsPage';
 import { SettingsPage } from './components/pages/SettingsPage';
+import { StudentFeedbackPage } from './components/pages/StudentFeedbackPage';
 import { FloatingAIAssistant } from './components/common/FloatingAIAssistant';
 
 function MainLayout() {
@@ -20,10 +21,13 @@ function MainLayout() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   const renderActiveContent = () => {
-    // Stage 1: If profile is not complete, allow Home/Welcome or Profile Setup
+    // Stage 1: If profile is not complete, allow Home/Welcome, Profile Setup, or Student Form
     if (!isProfileComplete) {
       if (activeTab === 'profile') {
         return <ProfileSetupPage />;
+      }
+      if (activeTab === 'feedback') {
+        return <StudentFeedbackPage />;
       }
       return <WelcomePage />;
     }
@@ -48,6 +52,8 @@ function MainLayout() {
         return <AIMentorPage />;
       case 'analytics':
         return <ProgressAnalyticsPage />;
+      case 'feedback':
+        return <StudentFeedbackPage />;
       case 'profile':
         return <ProfileSetupPage />;
       case 'settings':

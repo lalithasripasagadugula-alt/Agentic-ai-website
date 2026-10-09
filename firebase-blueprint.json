@@ -1,0 +1,145 @@
+{
+  "entities": {
+    "StudentProfile": {
+      "title": "StudentProfile",
+      "description": "Personalized student institutional profile and preferences",
+      "type": "object",
+      "properties": {
+        "fullName": { "type": "string", "maxLength": 100 },
+        "email": { "type": "string", "maxLength": 100 },
+        "collegeName": { "type": "string", "maxLength": 150 },
+        "branch": { "type": "string", "maxLength": 100 },
+        "academicYear": { "type": "string", "maxLength": 50 },
+        "semester": { "type": "string", "maxLength": 50 },
+        "studentId": { "type": "string", "maxLength": 50 },
+        "dailyStudyHours": { "type": "number" },
+        "preferredStudyTime": { "type": "string", "enum": ["Morning", "Afternoon", "Evening", "Night"] },
+        "academicGoals": { "type": "string", "maxLength": 500 },
+        "existingDifficulties": { "type": "string", "maxLength": 500 },
+        "attendanceTargetPercent": { "type": "number" },
+        "isProfileComplete": { "type": "boolean" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["fullName", "email", "collegeName", "branch", "academicYear", "semester", "attendanceTargetPercent", "isProfileComplete"]
+    },
+    "Subject": {
+      "title": "Subject",
+      "description": "Academic course subject, attendance tallies, and internal marks",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 64 },
+        "name": { "type": "string", "maxLength": 100 },
+        "code": { "type": "string", "maxLength": 20 },
+        "faculty": { "type": "string", "maxLength": 100 },
+        "totalClasses": { "type": "number" },
+        "attendedClasses": { "type": "number" },
+        "targetAttendance": { "type": "number" },
+        "internalMarksObtained": { "type": "number" },
+        "maxInternalMarks": { "type": "number" },
+        "upcomingAssessments": { "type": "string", "maxLength": 200 },
+        "assignmentDeadlines": { "type": "string", "maxLength": 200 },
+        "difficulty": { "type": "string", "enum": ["Easy", "Medium", "Hard"] },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "name", "code", "totalClasses", "attendedClasses", "targetAttendance", "difficulty"]
+    },
+    "DailyAttendanceRecord": {
+      "title": "DailyAttendanceRecord",
+      "description": "Log of class attendance on a specific calendar date",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 64 },
+        "date": { "type": "string", "maxLength": 10 },
+        "subjectId": { "type": "string", "maxLength": 64 },
+        "subjectCode": { "type": "string", "maxLength": 20 },
+        "subjectName": { "type": "string", "maxLength": 100 },
+        "status": { "type": "string", "enum": ["present", "absent", "excused"] },
+        "notes": { "type": "string", "maxLength": 250 }
+      },
+      "required": ["id", "date", "subjectId", "subjectCode", "subjectName", "status"]
+    },
+    "TodoTask": {
+      "title": "TodoTask",
+      "description": "Academic assignment, project, or study todo item",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 64 },
+        "title": { "type": "string", "maxLength": 150 },
+        "subjectId": { "type": "string", "maxLength": 64 },
+        "subjectName": { "type": "string", "maxLength": 100 },
+        "deadline": { "type": "string", "maxLength": 10 },
+        "priority": { "type": "string", "enum": ["Urgent", "High", "Medium", "Low"] },
+        "notes": { "type": "string", "maxLength": 500 },
+        "completed": { "type": "boolean" },
+        "createdAt": { "type": "string", "maxLength": 30 }
+      },
+      "required": ["id", "title", "subjectName", "deadline", "priority", "completed"]
+    },
+    "AcademicRisk": {
+      "title": "AcademicRisk",
+      "description": "Computed academic risk assessment item",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 64 },
+        "title": { "type": "string", "maxLength": 150 },
+        "subjectId": { "type": "string", "maxLength": 64 },
+        "subjectName": { "type": "string", "maxLength": 100 },
+        "category": { "type": "string", "enum": ["Attendance", "Internal Marks", "Upcoming Exam", "Overdue Assignment", "Study Deficit"] },
+        "severity": { "type": "string", "enum": ["Low", "Medium", "High"] },
+        "triggerData": { "type": "string", "maxLength": 250 },
+        "whyItMatters": { "type": "string", "maxLength": 500 },
+        "recommendedAction": { "type": "string", "maxLength": 500 },
+        "priority": { "type": "string", "enum": ["Urgent", "High", "Medium", "Low"] },
+        "suggestedDate": { "type": "string", "maxLength": 30 },
+        "status": { "type": "string", "enum": ["Open", "In Progress", "Resolved"] },
+        "createdAt": { "type": "string", "maxLength": 30 }
+      },
+      "required": ["id", "title", "subjectName", "category", "severity", "status"]
+    },
+    "ScheduledTask": {
+      "title": "ScheduledTask",
+      "description": "Adaptive recovery revision schedule block",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 64 },
+        "date": { "type": "string", "maxLength": 10 },
+        "startTime": { "type": "string", "maxLength": 5 },
+        "endTime": { "type": "string", "maxLength": 5 },
+        "subjectId": { "type": "string", "maxLength": 64 },
+        "subjectName": { "type": "string", "maxLength": 100 },
+        "taskDescription": { "type": "string", "maxLength": 250 },
+        "priority": { "type": "string", "enum": ["Urgent", "High", "Medium", "Low"] },
+        "durationMinutes": { "type": "number" },
+        "relatedRiskOrGoal": { "type": "string", "maxLength": 200 },
+        "completed": { "type": "boolean" }
+      },
+      "required": ["id", "date", "startTime", "endTime", "subjectName", "taskDescription", "priority", "durationMinutes", "completed"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}/profile/{profileId}": {
+      "schema": "StudentProfile",
+      "description": "Personalized student profile data for the authenticated student"
+    },
+    "/users/{userId}/subjects/{subjectId}": {
+      "schema": "Subject",
+      "description": "Enrolled courses, attendance numbers, and test scores for a student"
+    },
+    "/users/{userId}/attendance/{recordId}": {
+      "schema": "DailyAttendanceRecord",
+      "description": "Daily calendar class attendance records for a student"
+    },
+    "/users/{userId}/todos/{todoId}": {
+      "schema": "TodoTask",
+      "description": "Personal to-do tasks and course assignments for a student"
+    },
+    "/users/{userId}/risks/{riskId}": {
+      "schema": "AcademicRisk",
+      "description": "Detected academic risks and statuses for a student"
+    },
+    "/users/{userId}/schedule/{taskId}": {
+      "schema": "ScheduledTask",
+      "description": "Recovery study blocks and schedule tasks for a student"
+    }
+  }
+}

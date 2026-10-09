@@ -57,6 +57,15 @@ export const WelcomePage: React.FC = () => {
               <span>Load Sample Template (Aarav Sharma)</span>
             </button>
           )}
+
+          <button
+            onClick={() => setActiveTab('feedback')}
+            className="w-full sm:w-auto flex items-center justify-center gap-2 px-5 py-3.5 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 rounded-xl text-xs font-bold transition-all cursor-pointer"
+            title="Open the student intake & feedback form"
+          >
+            <span>Student Form (n8n)</span>
+            <ArrowRight className="w-3.5 h-3.5 text-slate-400" />
+          </button>
         </div>
       </div>
 

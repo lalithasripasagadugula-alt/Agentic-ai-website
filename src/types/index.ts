@@ -8,6 +8,7 @@ export type NavigationTab =
   | 'schedule'
   | 'mentor'
   | 'analytics'
+  | 'feedback'
   | 'profile'
   | 'settings';
 
@@ -102,4 +103,5 @@ export interface ChatMessage {
   text: string;
   timestamp: string;
   isLiveAI?: boolean;
+  source?: 'n8n' | 'gemini' | 'rules';
 }

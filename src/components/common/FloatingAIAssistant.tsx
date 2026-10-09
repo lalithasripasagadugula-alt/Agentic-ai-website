@@ -47,9 +47,9 @@ export const FloatingAIAssistant: React.FC = () => {
           </div>
           <div>
             <h3 className="text-xs font-bold leading-tight">ProAct AI Mentor</h3>
-            <span className="text-[10px] text-[#A5E6E2] flex items-center gap-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-[#77DAD7]" />
-              Academic success assistant
+            <span className="text-[10px] text-[#A5E6E2] flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+              <span>n8n webhook + Gemini enabled</span>
             </span>
           </div>
         </div>

@@ -93,6 +93,12 @@ export const Sidebar: React.FC<SidebarProps> = ({ isMobileOpen, onCloseMobile })
       requiresProfile: true,
     },
     {
+      id: 'feedback' as NavigationTab,
+      label: 'Student Form (n8n)',
+      icon: Sparkles,
+      requiresProfile: false,
+    },
+    {
       id: 'profile' as NavigationTab,
       label: 'My Profile',
       icon: User,

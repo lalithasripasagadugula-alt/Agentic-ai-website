@@ -30,11 +30,98 @@ if (apiKey) {
   });
 }
 
+// n8n Chat Webhook URL provided by user
+const N8N_CHAT_WEBHOOK_URL =
+  process.env.N8N_CHAT_WEBHOOK_URL ||
+  'https://navyapriya.app.n8n.cloud/webhook/7dc90365-76de-4844-ae0c-6cfa50909a74/chat';
+
+// API: n8n Workflow Chat Webhook Gateway
+app.post('/api/n8n/chat', async (req: Request, res: Response) => {
+  const { message, chatInput, studentContext, sessionId } = req.body;
+  const userText = String(message || chatInput || '').trim();
+
+  if (!userText) {
+    return res.status(400).json({ error: 'Message text is required' });
+  }
+
+  try {
+    // Send standard n8n chat payloads (compatible with n8n Chat Trigger / Webhook nodes)
+    const n8nPayload = {
+      message: userText,
+      chatInput: userText,
+      sessionId: sessionId || studentContext?.studentId || 'proact-session',
+      studentContext: studentContext || null,
+      timestamp: new Date().toISOString(),
+    };
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 12000);
+
+    const n8nResponse = await fetch(N8N_CHAT_WEBHOOK_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json, text/plain, */*',
+      },
+      body: JSON.stringify(n8nPayload),
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+
+    if (n8nResponse.ok) {
+      const contentType = n8nResponse.headers.get('content-type') || '';
+      let replyText = '';
+
+      if (contentType.includes('application/json')) {
+        const json = await n8nResponse.json();
+        replyText =
+          json.output ||
+          json.reply ||
+          json.text ||
+          json.response ||
+          json.message ||
+          (typeof json === 'string' ? json : JSON.stringify(json));
+      } else {
+        replyText = await n8nResponse.text();
+      }
+
+      return res.json({
+        reply: replyText || 'Received empty response from n8n workflow.',
+        source: 'n8n',
+        status: 'success',
+      });
+    } else {
+      const errorText = await n8nResponse.text();
+      let parsedError: any = null;
+      try {
+        parsedError = JSON.parse(errorText);
+      } catch {
+        // text
+      }
+
+      return res.status(n8nResponse.status).json({
+        error: `n8n Webhook returned status ${n8nResponse.status}`,
+        details: parsedError?.message || errorText,
+        hint: parsedError?.hint || undefined,
+        code: parsedError?.code || n8nResponse.status,
+      });
+    }
+  } catch (err: any) {
+    console.error('n8n chat proxy error:', err);
+    return res.status(502).json({
+      error: 'Failed to contact n8n chat webhook',
+      details: err?.message || 'Network request timeout or failed',
+    });
+  }
+});
+
 // Health check endpoint
 app.get('/api/health', (_req: Request, res: Response) => {
   res.json({
     status: 'ok',
     aiEnabled: Boolean(aiClient),
+    n8nWebhookConfigured: true,
+    n8nWebhookUrl: N8N_CHAT_WEBHOOK_URL,
     timestamp: new Date().toISOString(),
   });
 });

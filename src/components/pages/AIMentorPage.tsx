@@ -53,26 +53,32 @@ export const AIMentorPage: React.FC = () => {
             <Bot className="w-5 h-5 text-[#0A858C]" />
           </div>
           <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-xl font-bold text-[#0B757B]">ProAct AI Mentor</h1>
-              <span className="text-xs font-semibold text-[#0A858C] bg-[#F0FAF9] border border-[#77DAD7]/50 px-2.5 py-0.5 rounded-full">
-                Strict Grounding Active
-              </span>
+              <div className="flex items-center gap-2 flex-wrap">
+                <h1 className="text-xl font-bold text-[#0B757B]">ProAct AI Mentor</h1>
+                <span className="text-xs font-semibold text-[#0A858C] bg-[#F0FAF9] border border-[#77DAD7]/50 px-2.5 py-0.5 rounded-full">
+                  Strict Grounding Active
+                </span>
+                <span className="text-xs font-semibold text-[#0B757B] bg-[#A5E6E2]/30 border border-[#77DAD7]/50 px-2.5 py-0.5 rounded-full inline-flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                  n8n Chat Webhook Connected
+                </span>
+              </div>
+              <p className="text-xs text-slate-500 mt-1">
+                Contextual guidance powered by your n8n workflow pipeline & Gemini models, grounded on your verified records.
+              </p>
             </div>
-            <p className="text-xs text-slate-500 mt-1">
-              Contextual guidance based on your verified subjects, attendance records, and active risks.
-            </p>
+          </div>
+
+          <div className="flex items-center gap-2 self-start md:self-center">
+            <button
+              onClick={clearMentorChat}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              <span>Clear Chat</span>
+            </button>
           </div>
         </div>
-
-        <button
-          onClick={clearMentorChat}
-          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-colors self-start md:self-center cursor-pointer"
-        >
-          <RotateCcw className="w-3.5 h-3.5" />
-          <span>Clear Chat</span>
-        </button>
-      </div>
 
       {/* Chat Container */}
       <div className="bg-white rounded-2xl border border-[#A5E6E2]/60 shadow-xs flex flex-col h-[560px] overflow-hidden">
@@ -110,8 +116,29 @@ export const AIMentorPage: React.FC = () => {
 
                     {!isUser && (
                       <div className="pt-2 border-t border-[#A5E6E2]/30 flex items-center justify-between text-[10px] text-slate-400">
-                        <span>
-                          {msg.isLiveAI ? 'Synthesized via Gemini AI' : 'Deterministic Mentor Response'}
+                        <span className="flex items-center gap-1.5">
+                          {msg.source === 'n8n' && (
+                            <span className="font-bold text-[#0B757B] bg-[#A5E6E2]/40 px-1.5 py-0.5 rounded text-[9px]">
+                              n8n Workflow
+                            </span>
+                          )}
+                          {msg.source === 'gemini' && (
+                            <span className="font-bold text-[#0A858C] bg-[#F0FAF9] px-1.5 py-0.5 rounded text-[9px]">
+                              Gemini AI
+                            </span>
+                          )}
+                          {msg.source === 'rules' && (
+                            <span className="font-bold text-slate-600 bg-slate-100 px-1.5 py-0.5 rounded text-[9px]">
+                              Academic Rules Engine
+                            </span>
+                          )}
+                          <span>
+                            {msg.source === 'n8n'
+                              ? 'Processed via n8n webhook'
+                              : msg.isLiveAI
+                              ? 'Synthesized via Gemini AI'
+                              : 'Deterministic Mentor Response'}
+                          </span>
                         </span>
                         <span>{msg.timestamp}</span>
                       </div>

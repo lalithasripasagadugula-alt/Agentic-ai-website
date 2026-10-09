@@ -13,6 +13,8 @@ import {
   Sliders,
   CheckCircle2,
   CalendarCheck,
+  Database,
+  RefreshCw,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import {
@@ -29,7 +31,13 @@ export const PersonalizedDashboard: React.FC = () => {
     risks,
     schedule,
     setActiveTab,
+    firebaseUser,
+    syncToFirestoreNow,
+    cloudSyncStatus,
+    lastCloudSync,
+    cloudError,
   } = useApp();
+  const [isManualSyncing, setIsManualSyncing] = useState(false);
 
   // Calculate actual metrics from real student data
   const hasSubjects = subjects.length > 0;
@@ -71,10 +79,29 @@ export const PersonalizedDashboard: React.FC = () => {
             </p>
           </div>
 
-          <div className="flex items-center gap-2 self-start sm:self-center shrink-0">
+          <div className="flex items-center gap-2 self-start sm:self-center shrink-0 flex-wrap">
+            <button
+              onClick={async () => {
+                setIsManualSyncing(true);
+                await syncToFirestoreNow();
+                setTimeout(() => setIsManualSyncing(false), 800);
+              }}
+              title={lastCloudSync ? `Last synced to Firestore at ${lastCloudSync}` : 'Sync with Cloud Firestore'}
+              className="flex items-center gap-1.5 px-3 py-2 text-xs font-bold text-[#0B757B] bg-[#F0FAF9] hover:bg-[#A5E6E2]/40 border border-[#77DAD7]/70 rounded-xl transition-colors cursor-pointer"
+            >
+              <Database className="w-3.5 h-3.5 text-[#0A858C]" />
+              <span className="hidden md:inline">Firestore:</span>
+              <span className="font-semibold">{cloudSyncStatus === 'syncing' || isManualSyncing ? 'Syncing...' : 'Synced'}</span>
+              <RefreshCw
+                className={`w-3 h-3 text-[#0A858C] ${
+                  cloudSyncStatus === 'syncing' || isManualSyncing ? 'animate-spin' : ''
+                }`}
+              />
+            </button>
+
             <button
               onClick={() => setActiveTab('profile')}
-              className="flex items-center gap-1.5 px-3 py-2 text-xs font-bold text-[#0B757B] bg-[#F0FAF9] hover:bg-[#A5E6E2]/30 border border-[#77DAD7]/60 rounded-xl transition-colors cursor-pointer"
+              className="flex items-center gap-1.5 px-3 py-2 text-xs font-bold text-slate-700 bg-white hover:bg-[#F0FAF9] border border-slate-200 rounded-xl transition-colors cursor-pointer"
             >
               <User className="w-3.5 h-3.5 text-[#0A858C]" />
               <span>Edit Profile</span>
@@ -368,6 +395,15 @@ export const PersonalizedDashboard: React.FC = () => {
             <CalendarCheck className="w-4 h-4 text-[#0B757B] mb-2 group-hover:scale-110 transition-transform" />
             <h3 className="text-xs font-bold text-slate-800">View Calendar</h3>
             <p className="text-[10px] text-slate-500 mt-0.5">Monthly timetable & records</p>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('feedback')}
+            className="p-3.5 rounded-xl bg-[#F0FAF9] hover:bg-[#A5E6E2]/30 border border-[#77DAD7]/50 text-left transition-colors group cursor-pointer"
+          >
+            <Sparkles className="w-4 h-4 text-[#0B757B] mb-2 group-hover:scale-110 transition-transform" />
+            <h3 className="text-xs font-bold text-slate-800">Student Form</h3>
+            <p className="text-[10px] text-slate-500 mt-0.5">n8n intake survey</p>
           </button>
 
           <button

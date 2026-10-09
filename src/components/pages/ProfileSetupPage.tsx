@@ -11,15 +11,16 @@ import {
   CheckCircle2,
   AlertCircle,
   ArrowRight,
+  Database,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { StudentProfile } from '../../types';
 
 export const ProfileSetupPage: React.FC = () => {
-  const { student, saveProfile, isProfileComplete, loadSampleTemplate } = useApp();
+  const { student, saveProfile, isProfileComplete, loadSampleTemplate, firebaseUser, signInWithGoogle } = useApp();
 
-  const [fullName, setFullName] = useState(student?.fullName || '');
-  const [email, setEmail] = useState(student?.email || '');
+  const [fullName, setFullName] = useState(student?.fullName || firebaseUser?.displayName || '');
+  const [email, setEmail] = useState(student?.email || firebaseUser?.email || '');
   const [collegeName, setCollegeName] = useState(student?.collegeName || '');
   const [branch, setBranch] = useState(student?.branch || '');
   const [academicYear, setAcademicYear] = useState(student?.academicYear || '3rd Year');
@@ -114,6 +115,32 @@ export const ProfileSetupPage: React.FC = () => {
         <div className="p-4 rounded-xl bg-[#F0FAF9] border border-[#36B8B7] text-[#0B757B] text-xs flex items-center gap-2 animate-in fade-in">
           <CheckCircle2 className="w-4 h-4 text-[#0A858C]" />
           <span className="font-semibold">Profile details saved successfully! Dashboard activated.</span>
+        </div>
+      )}
+
+      {/* Firestore Cloud Sync Status Banner */}
+      {firebaseUser ? (
+        <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Database className="w-4 h-4 text-emerald-600 shrink-0" />
+            <span>
+              Connected to <strong>proact-ai-ff60d</strong> as <strong>{firebaseUser.email || 'Guest Student'}</strong>. Records will sync directly to Firestore.
+            </span>
+          </div>
+        </div>
+      ) : (
+        <div className="p-3.5 rounded-xl bg-[#F0FAF9] border border-[#77DAD7]/60 text-[#0B757B] text-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5">
+          <div className="flex items-center gap-2">
+            <Database className="w-4 h-4 text-[#0A858C] shrink-0" />
+            <span>Firebase Firestore database connected. Sign in to sync your profile across all your devices.</span>
+          </div>
+          <button
+            type="button"
+            onClick={signInWithGoogle}
+            className="px-3 py-1.5 bg-[#0B757B] hover:bg-[#0A858C] text-white rounded-lg text-[11px] font-bold cursor-pointer shrink-0 transition-colors"
+          >
+            Google Sign In
+          </button>
         </div>
       )}
 
