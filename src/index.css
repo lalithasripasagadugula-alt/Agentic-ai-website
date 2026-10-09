@@ -1,0 +1,89 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --color-light-teal: #A5E6E2;
+    --color-soft-aqua: #77DAD7;
+    --color-primary-teal: #36B8B7;
+    --color-deep-teal: #0A858C;
+    --color-dark-teal: #0B757B;
+    --color-bg-aqua: #F0FAF9;
+    --color-card-bg: #FFFFFF;
+    --color-card-teal: #F4FCFB;
+  }
+
+  body {
+    font-family: 'Plus Jakarta Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    color: #0f172a;
+    background-color: #F0FAF9;
+  }
+
+  code, pre, .font-mono {
+    font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  }
+}
+
+/* Custom subtle scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #A5E6E2;
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #36B8B7;
+}
+
+/* Color utility classes for exact reference palette */
+.bg-dark-teal {
+  background-color: #0B757B;
+}
+.text-dark-teal {
+  color: #0B757B;
+}
+.border-dark-teal {
+  border-color: #0B757B;
+}
+
+.bg-deep-teal {
+  background-color: #0A858C;
+}
+.text-deep-teal {
+  color: #0A858C;
+}
+.border-deep-teal {
+  border-color: #0A858C;
+}
+
+.bg-primary-teal {
+  background-color: #36B8B7;
+}
+.text-primary-teal {
+  color: #36B8B7;
+}
+.border-primary-teal {
+  border-color: #36B8B7;
+}
+
+.bg-soft-aqua {
+  background-color: #77DAD7;
+}
+.text-soft-aqua {
+  color: #77DAD7;
+}
+
+.bg-light-teal {
+  background-color: #A5E6E2;
+}
+.text-light-teal {
+  color: #0A858C;
+}
+
+.bg-aqua-surface {
+  background-color: #F0FAF9;
+}

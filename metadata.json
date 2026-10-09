@@ -1,0 +1,6 @@
+{
+  "name": "ProAct AI — Student Success Platform",
+  "description": "The proactive college student success platform with Risk Detector, Future Simulator, and Recovery Coach.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
